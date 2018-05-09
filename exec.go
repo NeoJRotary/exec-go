@@ -1,12 +1,8 @@
 package exec
 
-import (
-	"log"
-)
-
 // Exec main type
 type Exec struct {
-	logger *log.Logger
+	EventHandler *EventHandler
 }
 
 // Result executed result
@@ -22,21 +18,15 @@ type AtDir struct {
 }
 
 // NewExec get new Exec. Give it an log.Logger for logging.
-func NewExec(logger *log.Logger) *Exec {
-	return &Exec{logger: logger}
+func NewExec(eh *EventHandler) *Exec {
+	return &Exec{EventHandler: eh}
 }
 
 // Run run a cmd at current dir and wait for response
 func (ex *Exec) Run(name string, arg ...string) (out string, err error) {
 	cmd := NewCmd("", name, arg...)
+	cmd.SetEventHandler(ex.EventHandler)
 	out, err = cmd.Run()
-	if ex.logger != nil {
-		if err != nil {
-			ex.logger.Println(cmd.GetCmd(), "\n", out, err.Error())
-		} else {
-			ex.logger.Println(cmd.GetCmd(), "\n", out)
-		}
-	}
 	return out, err
 }
 
@@ -47,14 +37,18 @@ func (ex *Exec) Dir(dir string) AtDir {
 		Run: func(name string, arg ...string) (out string, err error) {
 			cmd := NewCmd(dir, name, arg...)
 			out, err = cmd.Run()
-			if ex.logger != nil {
-				if err != nil {
-					ex.logger.Println(dir, cmd.GetCmd(), "\n", out, err.Error())
-				} else {
-					ex.logger.Println(dir, cmd.GetCmd(), "\n", out)
-				}
-			}
+			cmd.SetEventHandler(ex.EventHandler)
 			return out, err
 		},
 	}
 }
+
+// NewCmd get new Cmd which use EventHandler from Exec
+func (ex *Exec) NewCmd(dir string, name string, arg ...string) *Cmd {
+	return NewCmd(dir, name, arg...).SetEventHandler(ex.EventHandler)
+}
+
+// // NewPipeline get new Pipeline which use EventHandler from Exec
+// func (ex *Exec) NewPipeline() *Pipeline {
+// 	return NewPipeline().SetEventHandler(ex.EventHandler)
+// }

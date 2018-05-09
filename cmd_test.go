@@ -72,13 +72,13 @@ func TestCmd_Read(t *testing.T) {
 	}
 
 	cmd.Read()
-	b := string(cmd.Get())
+	b := string(cmd.GetMsg())
 	if b != "123\n" {
 		t.Fatal("wrong, get:", b)
 	}
 	time.Sleep(time.Millisecond * 1100)
 	cmd.Read()
-	b = string(cmd.Get())
+	b = string(cmd.GetMsg())
 	if b != "456\n789" {
 		t.Fatal("wrong, get:", b)
 	}
