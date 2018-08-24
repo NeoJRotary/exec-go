@@ -7,7 +7,7 @@ External command exec library for golang
 - Util of native `os.exec.cmd` library.
 - Pipeline library for commands.
 - (Planning) PipelineGroup for parallelly manage multi-pipelines.
-- (Plan to Deper) Cron Job function for command.
+- (Plan to Deprecate) Cron Job function for command.
 
 ## Cmd
 - Error Message   
