@@ -1,25 +1,17 @@
-package exec
+package exec_test
 
 import (
-	"log"
-	"os"
 	"testing"
+
+	exec "github.com/NeoJRotary/exec-go"
 )
 
-var testLogger = log.New(os.Stdout, "\n[EXEC] ", log.LstdFlags)
-
-func TestExec_Run(t *testing.T) {
-	exec := NewExec(testLogger)
-	r, _ := exec.Run("echo", "123")
-	if r != "123\n" {
-		t.Fatal("wrong output :", r)
+func TestRunCmd(t *testing.T) {
+	r, err := exec.RunCmd("", "echo", "123")
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestExec_Dir(t *testing.T) {
-	exec := NewExec(testLogger)
-	r, _ := exec.Dir("./").Run("ls", "Dockerfile")
-	if r != "Dockerfile\n" {
+	if r != "123\n" {
 		t.Fatal("wrong output :", r)
 	}
 }

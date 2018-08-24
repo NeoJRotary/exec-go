@@ -1,169 +1,262 @@
 package exec
 
-// import (
-// 	"fmt"
-// 	"log"
-// )
+import (
+	"errors"
+	"strings"
+	"time"
+)
 
-// // Pipeline commands pipeline
-// type Pipeline struct {
-// 	Started  bool
-// 	Done     bool
-// 	Failed   bool
-// 	Canceled bool
-// 	Pausing  bool
-// 	logger   *log.Logger
-// 	stopChan chan bool
-// 	group    *PipelineGroup
-// 	underDir string
-// 	pipeCmds []*pipeCmd
-// 	index    int
-// }
+// Pipeline commands pipeline
+type Pipeline struct {
+	// pipeline started
+	Started bool
+	// pipeline done
+	Done bool
+	// pipeline failed
+	Failed bool
+	// pipeline canceld
+	Canceled bool
+	// pipline Timedout
+	Timedout bool
+	// Cmd pointer slice
+	PipeCmds []*PipeCmd
+	// current index of PipeCmd
+	CurrentIndex int
+	// EventHandler
+	EventHandler *EventHandler
+	// TimeoutDur duration
+	TimeoutDur time.Duration
+	// FailureMsg custom error message when failed at handler
+	FailureMsg string
 
-// // HandleFunc handler between two commands in pipeline.
-// type HandleFunc func(string, error) bool
+	// current Under
+	currentDir string
+	// current Env
+	currentEnv []string
+	// current Event Handler
+	currentEventHandler *EventHandler
 
-// type pipeCmd struct {
-// 	cmd     *Cmd
-// 	handler HandleFunc
-// }
+	// chan to check pipeline is running
+	runningChan chan bool
+}
 
-// // Pipeline HandleFunc to stop it at error
-// func pipeStopAtErr(s string, e error) bool {
-// 	return e == nil
-// }
+// NewPipeline new pipeline.
+func NewPipeline() *Pipeline {
+	pipe := Pipeline{
+		currentDir:   "",
+		currentEnv:   []string{},
+		EventHandler: DefaultEventHandler,
+	}
+	return &pipe
+}
 
-// // Pipeline HandleFunc to skip error
-// func pipeSkipErr(string, error) bool {
-// 	return true
-// }
+// SetPipelineEventHandler set event handler of pipeline
+func (pipe *Pipeline) SetPipelineEventHandler(eh *EventHandler) *Pipeline {
+	pipe.EventHandler = eh
+	pipe.currentEventHandler = eh
+	return pipe
+}
 
-// // NewPipeline new pipeline.
-// func (ex *Exec) NewPipeline(withLogger bool) *Pipeline {
-// 	pipe := Pipeline{
-// 		stopChan: make(chan bool, 1),
-// 		underDir: "",
-// 		index:    0,
-// 	}
-// 	if withLogger {
-// 		pipe.logger = ex.logger
-// 	}
-// 	return &pipe
-// }
+// SetTimeout set timeout
+func (pipe *Pipeline) SetTimeout(dur time.Duration) *Pipeline {
+	pipe.TimeoutDur = dur
+	return pipe
+}
 
-// // Under under which dir. Return pipeline pointer.
-// func (pipe *Pipeline) Under(dir string) *Pipeline {
-// 	if pipe.Started {
-// 		return pipe
-// 	}
-// 	pipe.underDir = dir
-// 	return pipe
-// }
+// Under under which dir.
+func (pipe *Pipeline) Under(dir string) *Pipeline {
+	if pipe.Started {
+		return pipe
+	}
+	pipe.currentDir = dir
+	return pipe
+}
 
-// // Do add cmd to pipeline. It use last dir which you set by Under(). By default dir is current path.
-// func (pipe *Pipeline) Do(name string, arg ...string) *Pipeline {
-// 	if pipe.Started {
-// 		return pipe
-// 	}
-// 	cmd := &pipeCmd{
-// 		cmd:     NewCmd(pipe.underDir, name, arg...),
-// 		handler: pipeStopAtErr,
-// 	}
-// 	pipe.pipeCmds = append(pipe.pipeCmds, cmd)
-// 	return pipe
-// }
+// SetEnv replace whole Env for cmds. KeyValue should be like 'Key=Value'.
+func (pipe *Pipeline) SetEnv(keyValue string, more ...string) *Pipeline {
+	if pipe.Started {
+		return pipe
+	}
+	pipe.currentEnv = append(more, keyValue)
+	return pipe
+}
 
-// func (pipe *Pipeline) lastPipeCmd() *pipeCmd {
-// 	return pipe.pipeCmds[len(pipe.pipeCmds)-1]
-// }
+// SetCmdEventHandler set Event Handler for cmds. It inheirt from pipeline's by default.
+func (pipe *Pipeline) SetCmdEventHandler(eh *EventHandler) *Pipeline {
+	pipe.currentEventHandler = eh
+	return pipe
+}
 
-// // WithEnv under which dir. Return pipeline pointer.
-// func (pipe *Pipeline) WithEnv(name, value string) *Pipeline {
-// 	if pipe.Started {
-// 		return pipe
-// 	}
-// 	pipe.lastPipeCmd().cmd.AddEnv(name, value)
-// 	return pipe
-// }
+// AddEnv Add Env.
+func (pipe *Pipeline) AddEnv(name, value string) *Pipeline {
+	if pipe.Started {
+		return pipe
+	}
+	pipe.currentEnv = append(pipe.currentEnv, name+"="+value)
+	return pipe
+}
 
-// // Handler add handler after cmd for handling last output and error.
-// func (pipe *Pipeline) Handler(f HandleFunc) *Pipeline {
-// 	if pipe.Started {
-// 		return pipe
-// 	}
-// 	pipe.lastPipeCmd().handler = f
-// 	return pipe
-// }
+// RemoveEnv Remove Env by name.
+func (pipe *Pipeline) RemoveEnv(name string) *Pipeline {
+	if pipe.Started {
+		return pipe
+	}
+	newEnv := []string{}
+	for _, Env := range pipe.currentEnv {
+		if !strings.HasPrefix(Env, name+"=") {
+			newEnv = append(newEnv, Env)
+		}
+	}
+	pipe.currentEnv = newEnv
+	return pipe
+}
 
-// // SkipErr add handler after cmd to skip err.
-// func (pipe *Pipeline) SkipErr(f HandleFunc) *Pipeline {
-// 	if pipe.Started {
-// 		return pipe
-// 	}
-// 	pipe.lastPipeCmd().handler = pipeSkipErr
-// 	return pipe
-// }
+// Do add cmd to pipeline. It use latest Dir/Env you set before.
+func (pipe *Pipeline) Do(name string, arg ...string) *PipeCmd {
+	if pipe.Started {
+		return nil
+	}
 
-// // Start start pipeline
-// func (pipe *Pipeline) Start() {
-// 	pipe.Started = true
-// 	go pipe.run()
-// }
+	cmd := NewCmd(pipe.currentDir, name, arg...).SetEnv(pipe.currentEnv)
+	if pipe.currentEventHandler != nil {
+		cmd.SetEventHandler(pipe.currentEventHandler)
+	} else if pipe.EventHandler != nil {
+		cmd.SetEventHandler(pipe.EventHandler)
+	}
 
-// func (pipe *Pipeline) run() {
-// 	for _, c := range pipe.pipeCmds {
+	pcmd := &PipeCmd{
+		Cmd:        cmd,
+		HandleFunc: pipeStopAtErr,
+		pipe:       pipe,
+	}
+	pipe.PipeCmds = append(pipe.PipeCmds, pcmd)
+	return pcmd
+}
 
-// 	}
-// }
+// Finished pipeline lifecycle is finished or not
+func (pipe *Pipeline) Finished() bool {
+	return pipe.Done || pipe.Failed || pipe.Canceled
+}
 
-// func (pipe *Pipeline) stop() {
-// 	pipe.Canceled = true
-// 	if pipe.group != nil {
-// 		pipe.group.childStop()
-// 	}
-// }
+// Start start pipeline
+func (pipe *Pipeline) Start() error {
+	if pipe.Started {
+		return errors.New("Pipeline already started")
+	}
+	pipe.Started = true
+	pipe.runningChan = make(chan bool, 1)
+	go pipe.runCmds()
+	if pipe.TimeoutDur != 0 {
+		go pipe.checkTimeout()
+	}
+	if pipe.EventHandler.PipelineStarted != nil {
+		pipe.EventHandler.PipelineStarted(pipe)
+	}
+	return nil
+}
 
-// // Cancel ...
-// func (pipe *Pipeline) Cancel() {
-// 	if pipe.Canceled {
-// 		return
-// 	}
-// 	pipe.stopChan <- true
-// 	pipe.stop()
-// }
+// do timeout checking
+func (pipe *Pipeline) checkTimeout() {
+	timer := time.NewTimer(pipe.TimeoutDur)
+	<-timer.C
+	if !(pipe.Failed || pipe.Done) && !pipe.Canceled {
+		pipe.Timedout = true
+		pipe.Cancel()
+	}
+}
 
-// // Wait ...
-// func (pipe *Pipeline) Wait() (result []Result, cancel bool, err error) {
-// 	if pipe.Canceled {
-// 		return nil, true, nil
-// 	}
-// 	for _, c := range pipe.cmds {
-// 		if pipe.ex.doStdLog {
-// 			fmt.Println(c.str)
-// 		}
-// 		c.Start()
-// 		go c.Wait()
-// 		select {
-// 		case <-pipe.stopChan:
-// 			c.Cancel()
-// 			return nil, true, nil
-// 		case err = <-c.done:
-// 			result = append(result, Result{
-// 				cmd:    c.str,
-// 				output: c.stdout.String(),
-// 			})
-// 			if pipe.ex.doStdLog {
-// 				if err != nil {
-// 					pipe.ex.stdLogger.Println(c.stdout.String(), err.Error())
-// 				} else {
-// 					pipe.ex.stdLogger.Println(c.stdout.String())
-// 				}
-// 			}
-// 			if err != nil {
-// 				return result, false, err
-// 			}
-// 		}
-// 	}
-// 	pipe.stop()
-// 	return result, false, nil
-// }
+func (pipe *Pipeline) runCmds() {
+	for i := 0; i < len(pipe.PipeCmds); i++ {
+		if pipe.Finished() {
+			break
+		}
+
+		c := pipe.PipeCmds[i]
+
+		time.Sleep(c.DelayDur)
+		if pipe.Finished() {
+			break
+		}
+
+		pipe.CurrentIndex = i
+		err := c.Cmd.Start()
+		if err == nil {
+			err = c.Cmd.Wait()
+		}
+
+		if pipe.Canceled {
+			break
+		} else {
+			success, msg := c.HandleFunc(c.Cmd.Output(), err)
+			c.HandleMsg = msg
+			if !success {
+				pipe.Failed = true
+				pipe.FailureMsg = msg
+				break
+			}
+		}
+	}
+	if !pipe.Canceled && !pipe.Failed {
+		pipe.Done = true
+	}
+
+	pipe.runningChan <- false
+}
+
+// Wait block until Done/Failed/Canceled
+func (pipe *Pipeline) Wait() error {
+	if !pipe.Started {
+		return errors.New("Pipeline cant Wait() before Start()")
+	}
+	if pipe.runningChan == nil {
+		return errors.New("Pipeline cant Wait() after lifecycle is finished")
+	}
+
+	<-pipe.runningChan
+	close(pipe.runningChan)
+	pipe.runningChan = nil
+
+	if pipe.Failed && pipe.EventHandler.PipelineFailed != nil {
+		pipe.EventHandler.PipelineFailed(pipe)
+	}
+	if pipe.Done && pipe.EventHandler.PipelineDone != nil {
+		pipe.EventHandler.PipelineDone(pipe)
+	}
+
+	return nil
+}
+
+// Run run pipeline and wait for result
+func (pipe *Pipeline) Run() error {
+	err := pipe.Start()
+	if err != nil {
+		return err
+	}
+	return pipe.Wait()
+}
+
+// Cancel cancel pipeline
+func (pipe *Pipeline) Cancel() {
+	if pipe.Canceled {
+		return
+	}
+	pipe.Canceled = true
+	pipe.PipeCmds[pipe.CurrentIndex].Cmd.Cancel()
+	if pipe.EventHandler.PipelineCanceled != nil {
+		pipe.EventHandler.PipelineCanceled(pipe)
+	}
+}
+
+// GetCmdsOutput get output of all Cmds concat into one string
+func (pipe *Pipeline) GetCmdsOutput() (string, error) {
+	if !pipe.Finished() {
+		return "", errors.New("Pipeline cant GetCmdsOutput() before lifecycle is finished")
+	}
+
+	strs := []string{}
+	for i := 0; i <= pipe.CurrentIndex; i++ {
+		c := pipe.PipeCmds[i].Cmd
+		strs = append(strs, c.Output()+c.Error())
+	}
+	return strings.Join(strs, ""), nil
+}

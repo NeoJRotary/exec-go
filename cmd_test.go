@@ -1,24 +1,33 @@
-package exec
+package exec_test
 
 import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/NeoJRotary/exec-go"
 )
 
 func TestCmd_Run(t *testing.T) {
-	cmd := NewCmd("", "echo", "123")
-	out, err := cmd.Run()
+	out, err := exec.NewCmd("", "echo", "123").Run()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out != "123\n" {
 		t.Fatal("wrong out, should be 123\\n, get", out)
 	}
+
+	out, err = exec.NewCmd("", "bash", "-c", "echo errrr 1>&2; exit 1;").Run()
+	if err == nil {
+		t.Fatal("should get error")
+	}
+	if err.Error() != "errrr\n" {
+		t.Fatal("wrong error, should be errrr\\n, get", err.Error())
+	}
 }
 
 func TestCmd_AddEnv(t *testing.T) {
-	cmd := NewCmd("", "bash", "-c", `echo $MYENV`).AddEnv("MYENV", "123")
+	cmd := exec.NewCmd("", "bash", "-c", `echo $MYEnv`).AddEnv("MYEnv", "123")
 	out, err := cmd.Run()
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +38,7 @@ func TestCmd_AddEnv(t *testing.T) {
 }
 
 func TestCmd_StartWait(t *testing.T) {
-	cmd := NewCmd("", "echo", "123")
+	cmd := exec.NewCmd("", "echo", "123")
 	err := cmd.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +53,7 @@ func TestCmd_StartWait(t *testing.T) {
 }
 
 func TestCmd_Output(t *testing.T) {
-	cmd := NewCmd("", "bash", "-c", `echo 123; ccccc`)
+	cmd := exec.NewCmd("", "bash", "-c", `echo 123; ccccc`)
 	err := cmd.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +74,7 @@ func TestCmd_Output(t *testing.T) {
 }
 
 func TestCmd_Read(t *testing.T) {
-	cmd := NewCmd("", "bash", "-c", `echo 123; sleep 1s; echo 456; printf 789`)
+	cmd := exec.NewCmd("", "bash", "-c", `echo 123; sleep 1s; echo 456; printf 789`)
 	err := cmd.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +102,7 @@ func TestCmd_Read(t *testing.T) {
 }
 
 func TestCmd_Cancel(t *testing.T) {
-	cmd := NewCmd("", "bash", "-c", `bash -c "printf 123; sleep 5s; printf 456"`)
+	cmd := exec.NewCmd("", "bash", "-c", `bash -c "printf 123; sleep 5s; printf 456"`)
 	err := cmd.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -115,5 +124,24 @@ func TestCmd_Cancel(t *testing.T) {
 	}
 	if cmd.Output() != "123" {
 		t.Fatal("output should be 123")
+	}
+}
+
+func TestCmd_Timeout(t *testing.T) {
+	cmd := exec.NewCmd("", "sleep", "10s").SetTimeout(time.Second * 2)
+	err := cmd.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	startAt := time.Now()
+	err = cmd.Wait()
+	if err == nil {
+		t.Fatal("should throw err")
+	}
+	if !cmd.TimedOut {
+		t.Fatal("should time out")
+	}
+	if time.Since(startAt).Seconds() > 2.5 {
+		t.Fatal("process should time out in 2.5s")
 	}
 }

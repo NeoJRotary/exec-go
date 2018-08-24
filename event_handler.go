@@ -2,6 +2,7 @@ package exec
 
 // EventHandler bind event hanlder to do logging or other handling as you want
 // be careful that all event handler function will be triggered synchronously to provide you synchronously control.
+// use `go func()` inside handler for asynchronously control
 type EventHandler struct {
 	// trigger when cmd successfully started
 	CmdStarted CmdEvent
@@ -13,14 +14,11 @@ type EventHandler struct {
 	CmdFailed CmdEvent
 	// trigger when cmd done without any error
 	CmdDone CmdEvent
+
 	// trigger when pipeline successfully started
 	PipelineStarted PipelineEvent
-	// trigger when pipeline be paused
-	PipelinePaused PipelineEvent
-	// trigger when pipeline restarted
-	PipelineRestarted PipelineEvent
 	// trigger when pipeline be canceled
-	PiplelineCanceled PipelineEvent
+	PipelineCanceled PipelineEvent
 	// trigger when pipeline failed
 	PipelineFailed PipelineEvent
 	// trigger when pipeline done without any error

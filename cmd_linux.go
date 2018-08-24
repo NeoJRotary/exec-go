@@ -15,5 +15,8 @@ func updateCmdByOS(cmd *exec.Cmd) {
 }
 
 func killProcess(p *os.Process) {
+	if p == nil {
+		return
+	}
 	syscall.Kill(-p.Pid, syscall.SIGKILL)
 }

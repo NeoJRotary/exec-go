@@ -23,6 +23,8 @@ type Cmd struct {
 	Started bool
 	// exec canceled
 	Canceled bool
+	// exec timedout
+	TimedOut bool
 	// exec failed by error
 	Failed bool
 	// exec done
@@ -67,7 +69,7 @@ func NewCmd(dir string, name string, arg ...string) *Cmd {
 		Name:         name,
 		Args:         arg,
 		Cmd:          cmd,
-		EventHandler: &EventHandler{},
+		EventHandler: DefaultEventHandler,
 		errBuf:       &errBuf,
 	}
 }
@@ -78,7 +80,13 @@ func (c *Cmd) SetEventHandler(eh *EventHandler) *Cmd {
 	return c
 }
 
-// AddEnv add env
+// SetEnv set Envs
+func (c *Cmd) SetEnv(Env []string) *Cmd {
+	c.Cmd.Env = Env
+	return c
+}
+
+// AddEnv add Env
 func (c *Cmd) AddEnv(name, value string) *Cmd {
 	c.Cmd.Env = append(c.Cmd.Env, name+"="+value)
 	return c
@@ -93,19 +101,6 @@ func (c *Cmd) SetTimeout(dur time.Duration) *Cmd {
 // GetCmd get cmd string
 func (c *Cmd) GetCmd() string {
 	return c.Name + " " + strings.Join(c.Args, " ")
-}
-
-// Run run cmd. If error, it return output until error and error messages as error.
-func (c *Cmd) Run() (string, error) {
-	var outBuf bytes.Buffer
-	c.Cmd.Stdout = &outBuf
-	err := c.Cmd.Run()
-	c.out = outBuf.Bytes()
-	c.err = c.errBuf.Bytes()
-	if err != nil {
-		return outBuf.String(), errors.New(c.errBuf.String())
-	}
-	return outBuf.String(), nil
 }
 
 // Start start cmd
@@ -134,6 +129,7 @@ func (c *Cmd) checkTimeout() {
 	timer := time.NewTimer(c.Timeout)
 	<-timer.C
 	if !(c.Failed || c.Done) && !c.Canceled {
+		c.TimedOut = true
 		c.Cancel()
 	}
 }
@@ -163,6 +159,9 @@ func (c *Cmd) GetMsg() []byte {
 
 // Cancel terminate the command process
 func (c *Cmd) Cancel() {
+	if c.Canceled {
+		return
+	}
 	c.Canceled = true
 	c.Read()
 	killProcess(c.Cmd.Process)
@@ -171,16 +170,20 @@ func (c *Cmd) Cancel() {
 	}
 }
 
-// Wait wait for cmd until its done. It will return original error ( exit(1) ) except error message. Use Error() to get error message.
+// Wait wait for cmd until its done. It will return original error ( like exit(1) ) except error message. Use Error() to get error message.
 func (c *Cmd) Wait() error {
 	for c.Read() {
 	}
+
 	err := c.Cmd.Wait()
-	if err != nil {
-		c.Failed = true
-	} else {
-		c.Done = true
+	if !c.Canceled {
+		if err != nil {
+			c.Failed = true
+		} else {
+			c.Done = true
+		}
 	}
+
 	c.Duration = time.Since(c.startTime)
 	c.err = c.errBuf.Bytes()
 
@@ -193,12 +196,25 @@ func (c *Cmd) Wait() error {
 	return err
 }
 
-// Output get outputs of cmd (without error) in bytes
+// Run run cmd. If error, it return output until error and error messages as error.
+func (c *Cmd) Run() (string, error) {
+	err := c.Start()
+	if err != nil {
+		return "", err
+	}
+	err = c.Wait()
+	if err != nil {
+		return c.Output(), errors.New(c.Error())
+	}
+	return c.Output(), nil
+}
+
+// Output get outputs of cmd (without error) in string
 func (c *Cmd) Output() string {
 	return string(c.out)
 }
 
-// Error get error output in bytes. Return nil if no error.
+// Error get error output in string
 func (c *Cmd) Error() string {
 	return string(c.err)
 }
