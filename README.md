@@ -1,7 +1,7 @@
 # Exec-Go v0.2.1-alpha
 External command exec library for golang   
 
-## Check details at [GoDoc](https://godoc.org/github.com/NeoJRotary/describe-go) 
+### Check details at [GoDoc](https://godoc.org/github.com/NeoJRotary/exec-go) 
 
 ## Features
 - Util of native `os.exec.cmd` library.
